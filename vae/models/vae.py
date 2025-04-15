@@ -5,59 +5,56 @@ from torch.nn import functional as F
 from .types_ import *
 
 class VAE(BaseVAE):
-    def __init__(self
-                 , x_dim: int
-                 , hidden_dim: List[int]
-                 , latent_dim: int 
-                 , **kwargs) -> None:
+    def __init__(self, x_dim: int, hidden_dim: List[int], latent_dim: int, **kwargs) -> None:
         super(VAE, self).__init__()
         self.latent_dim = latent_dim
         
-        '''
-        Encoder: Maps the input to a Gaussian distribution in latent space.
-        The encoder consists of several fully connected layers with Leaky ReLU activation functions.
-        '''
+        # Encoder setup remains the same
         modules = []
         if hidden_dim is None:
             hidden_dim = [32, 64, 128, 256, 512]
+        self.hidden_dim = hidden_dim.copy()  # Store original hidden_dim
         
         in_channels = x_dim
-        for h_dim in hidden_dim:
+        for h_dim in self.hidden_dim:
             modules.append(
                 nn.Sequential(
-                    nn.Conv2d(in_channels, out_channels = h_dim, kernel_size=3, stride=2, padding=1),
+                    nn.Conv2d(in_channels, h_dim, kernel_size=3, stride=2, padding=1),
                     nn.BatchNorm2d(h_dim),
                     nn.LeakyReLU(0.2)
                 )
             )
             in_channels = h_dim
-
         self.encoder = nn.Sequential(*modules)
-        self.fc_mu = nn.Linear(hidden_dim[-1] * 4, latent_dim)  # Mean of the Gaussian distribution
-        self.fc_var = nn.Linear(hidden_dim[-1] * 4, latent_dim)
-
-        '''
-        Decoder: Maps the latent representation back to the original data space.
-        The decoder consists of several fully connected layers with Leaky ReLU activation functions.
-        '''
+        
+        # Save the encoder's last channel count
+        self.encoder_last_channel = self.hidden_dim[-1]
+        self.fc_mu = nn.Linear(self.encoder_last_channel * 4, latent_dim)
+        self.fc_var = nn.Linear(self.encoder_last_channel * 4, latent_dim)
+        
+        # Decoder setup
+        self.decoder_input = nn.Linear(latent_dim, self.encoder_last_channel * 4)
+        
+        # Reverse hidden_dim for decoder
+        reversed_hidden_dim = list(reversed(self.hidden_dim))
         modules = []
-        self.decoder_input = nn.Linear(latent_dim, hidden_dim[-1] * 4)
-        hidden_dim.reverse()
-        for i in  range(len(hidden_dim) - 1):
+        for i in range(len(reversed_hidden_dim) - 1):
             modules.append(
                 nn.Sequential(
-                    nn.ConvTranspose2d(hidden_dim[i], hidden_dim[i + 1], kernel_size=3, stride=2, padding=1, output_padding=1),
-                    nn.BatchNorm2d(hidden_dim[i + 1]),
+                    nn.ConvTranspose2d(reversed_hidden_dim[i], reversed_hidden_dim[i+1], 
+                                     kernel_size=3, stride=2, padding=1, output_padding=1),
+                    nn.BatchNorm2d(reversed_hidden_dim[i+1]),
                     nn.LeakyReLU(0.2)
                 )
             )
-
         self.decoder = nn.Sequential(*modules)
+        
         self.final_layer = nn.Sequential(
-            nn.ConvTranspose2d(hidden_dim[-1], hidden_dim[-1], kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(hidden_dim[-1]),
+            nn.ConvTranspose2d(reversed_hidden_dim[-1], reversed_hidden_dim[-1], 
+                             kernel_size=3, stride=2, padding=1, output_padding=1),
+            nn.BatchNorm2d(reversed_hidden_dim[-1]),
             nn.LeakyReLU(0.2),
-            nn.Conv2d(hidden_dim[-1], out_channels=x_dim, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(reversed_hidden_dim[-1], x_dim, kernel_size=3, padding=1),
             nn.Tanh()
         )
 
@@ -75,16 +72,11 @@ class VAE(BaseVAE):
         logvar = self.fc_var(result)
 
         return [mu, logvar]
-
-    def decode(self, z: Tensor) -> Any:
-        """
-        Maps the given latent codes
-        onto the image space.
-        :param z: (Tensor) [B x D]
-        :return: (Tensor) [B x C x H x W]
-        """
+    
+    def decode(self, z: Tensor) -> Tensor:
         result = self.decoder_input(z)
-        result = result.view(-1, 512, 2, 2)
+        # Use encoder's last channel count for reshaping
+        result = result.view(-1, self.encoder_last_channel, 2, 2)
         result = self.decoder(result)
         result = self.final_layer(result)
         return result
