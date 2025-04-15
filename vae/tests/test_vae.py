@@ -1,51 +1,76 @@
 import sys
-import os
 from pathlib import Path
 
-project_root = Path(__file__).resolve().parent.parent  # Go up 2 levels from tests/
-sys.path.append(str(project_root))
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-import torch 
+import torch
 import unittest
+
+try:
+    from torchsummary import summary
+    has_summary = True
+except ImportError:
+    has_summary = False
+
 from models.vae import VAE
-from torchsummary import summary
 
 class TestVAE(unittest.TestCase):
     def setUp(self):
-        # Set up a VAE model for testing
-        self.input_dim = 3  # Example input dimension (e.g., for MNIST)
-        self.hidden_dim = [32, 64, 128, 256, 512]
+        self.input_channels = 3
+        self.input_size = 64
         self.latent_dim = 10
-        self.model = VAE(self.input_dim, self.hidden_dim, self.latent_dim)
+        # Setup for 64x64 test
+        self.model = VAE(
+            x_dim=self.input_channels,
+            input_shape=(self.input_channels, self.input_size, self.input_size),
+            hidden_dims=[32, 64, 128],
+            latent_dim=self.latent_dim,
+        )
 
     def test_vae_initialization(self):
-        # Test if the model initializes correctly
-        self.assertIsInstance(self.model.encoder, torch.nn.Module)
-        self.assertIsInstance(self.model.decoder, torch.nn.Module)
+        self.assertIsInstance(self.model.encoder, torch.nn.Module, "Encoder not instance of nn.Module")
+        self.assertIsInstance(self.model.decoder, torch.nn.Module, "Decoder not instance of nn.Module")
 
     def test_vae_forward(self):
-        # Test the forward pass of the VAE
-        x = torch.randn(16, 3, 64, 64)
-        y = self.model(x)
-        self.assertEqual(y[0].size(), (16, 3, 64, 64))  # Check the output size
-        self.assertEqual(y[1].size(), (16, 3, 64, 64))
-        self.assertEqual(y[2].size(), (16, self.latent_dim))
-        self.assertEqual(y[3].size(), (16, self.latent_dim))
+        batch = 8
+        H = W = self.input_size
+        x = torch.randn(batch, self.input_channels, H, W)
+        recon_x, inp_x, mu, log_var = self.model(x)
+        self.assertEqual(recon_x.shape, (batch, self.input_channels, H, W), "Reconstruction shape mismatch")
+        self.assertEqual(inp_x.shape, (batch, self.input_channels, H, W), "Input passthrough shape mismatch")
+        self.assertEqual(mu.shape, (batch, self.latent_dim), "Latent mean shape mismatch")
+        self.assertEqual(log_var.shape, (batch, self.latent_dim), "Latent log_var shape mismatch")
 
     def test_vae_loss(self):
-        # Test the loss function
-        x = torch.randn(16, 3, 64, 64)
-
-        result = self.model(x)
-        loss = self.model.loss_function(result[0], result[1], result[2], result[3], kld_weight = 0.005)
-        print(loss)
+        batch = 4
+        x = torch.randn(batch, self.input_channels, self.input_size, self.input_size)
+        recon_x, inp_x, mu, log_var = self.model(x)
+        loss_out = self.model.loss_function(recon_x, inp_x, mu, log_var, kld_weight=0.01)
+        self.assertTrue(hasattr(loss_out, 'loss'), "Loss output missing 'loss' attribute")
+        self.assertTrue(loss_out.loss.requires_grad, "Loss should be a differentiable tensor")
+        self.assertGreaterEqual(loss_out.loss.item(), 0, "Loss should be non-negative")
 
     def test_vae_summary(self):
-        # Test the model summary
-        print(summary(self.model, (3, 64, 64), device='cpu'))
-        # Check if the summary prints without errors
-        # Note: The summary function prints the model architecture and parameters
-        # We can't assert the printed output, but we can check if it runs without error
+        if has_summary:
+            try:
+                summary(self.model, (self.input_channels, self.input_size, self.input_size), device='cpu')
+            except Exception as e:
+                self.fail(f"torchsummary.summary failed: {e}")
+        else:
+            print("torchsummary not installed; skipping summary test.")
+
+    def test_enc_dec_shapes(self):
+        """Test on another input shape to check dynamic adaptation."""
+        model32 = VAE(
+            x_dim=3, input_shape=(3, 32, 32),
+            hidden_dims=[32, 64], latent_dim=5)
+        x = torch.randn(2, 3, 32, 32)
+        out, _, mu, log_var = model32(x)
+        self.assertEqual(out.shape, (2, 3, 32, 32))
+        self.assertEqual(mu.shape, (2, 5))
+        self.assertEqual(log_var.shape, (2, 5))
 
 if __name__ == '__main__':
     unittest.main()

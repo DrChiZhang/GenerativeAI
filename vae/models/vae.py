@@ -1,145 +1,175 @@
 import torch
-from models import BaseVAE
 from torch import nn
 from torch.nn import functional as F
-from .types_ import *
+from typing import List, Tuple, Callable, Any, Dict, Optional
+from dataclasses import dataclass
 
-class VAE(BaseVAE):
-    def __init__(self, x_dim: int, hidden_dim: List[int], latent_dim: int, **kwargs) -> None:
-        super(VAE, self).__init__()
-        self.latent_dim = latent_dim
-        
-        # Default hidden dimensions
-        if hidden_dim is None:
-            hidden_dim = [32, 64, 128, 256, 512]
+@dataclass
+class VAEOutput:
+    loss: torch.Tensor
+    recon_loss: torch.Tensor
+    kld: torch.Tensor
 
-        self.hidden_dim = hidden_dim
-        
-        # Encoder
-        self.encoder = self._build_encoder(x_dim)
+class VAE(nn.Module):
+    def __init__(
+        self,
+        x_dim: int,
+        input_shape: Tuple[int, int, int],   # (C, H, W)
+        hidden_dims: Optional[List[int]] = None,
+        latent_dim: int = 16,
+        activation: Optional[Callable[[], nn.Module]] = None,
+        recon_loss_type: str = "mse",        # "mse" or "bce"
+    ):
+        """
+        Args:
+            x_dim : int : Number of channels in input image
+            input_shape : (C,H,W) : Input image shape (tuple)
+            hidden_dims : List[int] : List of channels for hidden layers
+            latent_dim : int : Dimensionality of latent space
+            activation : Callable : Activation (nn.ReLU, nn.LeakyReLU, etc.)
+            recon_loss_type : str : Reconstruction loss ("mse" or "bce")
+        """
+        super().__init__()
+        self.x_dim = x_dim
+        self.recon_loss_type = recon_loss_type.lower()
+        if hidden_dims is None:
+            hidden_dims = [32, 64, 128, 256, 512]
+        self.hidden_dims = hidden_dims
 
-        # Latent space
-        self.fc_mu = nn.Linear(hidden_dim[-1] * 4, latent_dim)
-        self.fc_var = nn.Linear(hidden_dim[-1] * 4, latent_dim)
+        if activation is None:
+            self.act = nn.LeakyReLU(0.2)
+        else:
+            self.act = activation()
 
-        # Decoder
-        self.decoder_input = nn.Linear(latent_dim, hidden_dim[-1] * 4)
-        self.decoder = self._build_decoder()
+        # ---------- Encoder ----------
+        modules = []
+        in_channels = x_dim
+        for h_dim in hidden_dims:
+            modules.append(nn.Conv2d(in_channels, h_dim, kernel_size=3, stride=2, padding=1))
+            modules.append(nn.BatchNorm2d(h_dim))
+            modules.append(self.act)
+            in_channels = h_dim
+        self.encoder = nn.Sequential(*modules)
+
+        # Determine flatten size after encoder
+        with torch.no_grad():
+            dummy = torch.zeros(1, *input_shape)
+            enc_out = self.encoder(dummy)
+            self.enc_out_shape = enc_out.shape[1:]  # (C, H, W)
+            self.enc_flat_dim = enc_out.numel() // enc_out.shape[0]
+
+        self.fc_mu = nn.Linear(self.enc_flat_dim, latent_dim)
+        self.fc_var = nn.Linear(self.enc_flat_dim, latent_dim)
+
+        # ---------- Decoder ----------
+        self.decoder_input = nn.Linear(latent_dim, self.enc_flat_dim)
+        decoder_modules = []
+        reversed_hidden_dims = list(reversed(hidden_dims))
+        in_channels = self.enc_out_shape[0]
+        for i in range(len(reversed_hidden_dims) - 1):
+            decoder_modules.append(
+                nn.ConvTranspose2d(
+                    in_channels, reversed_hidden_dims[i + 1],
+                    kernel_size=3, stride=2, padding=1, output_padding=1
+                )
+            )
+            decoder_modules.append(nn.BatchNorm2d(reversed_hidden_dims[i + 1]))
+            decoder_modules.append(self.act)
+            in_channels = reversed_hidden_dims[i + 1]
+
+        self.decoder = nn.Sequential(*decoder_modules)
+        # Output layer, project back to input channel count
         self.final_layer = nn.Sequential(
-            nn.ConvTranspose2d(hidden_dim[0], hidden_dim[0], kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(hidden_dim[0]),
-            nn.LeakyReLU(0.2),
-            nn.Conv2d(hidden_dim[0], x_dim, kernel_size=3, padding=1),
+            nn.ConvTranspose2d(
+                in_channels, x_dim, kernel_size=3, stride=2,
+                padding=1, output_padding=1
+            ),
             nn.Tanh()
         )
 
-    def _build_encoder(self, in_channels: int) -> nn.Sequential:
-        modules = []
-        for h_dim in self.hidden_dim:
-            modules.append(
-                nn.Sequential(
-                    nn.Conv2d(in_channels, h_dim, kernel_size=3, stride=2, padding=1),
-                    nn.BatchNorm2d(h_dim),
-                    nn.LeakyReLU(0.2)
-                )
-            )
-            in_channels = h_dim
-        return nn.Sequential(*modules)
-
-    def _build_decoder(self) -> nn.Sequential:
-        modules = []
-        reversed_hidden_dim = list(reversed(self.hidden_dim))
-        for i in range(len(reversed_hidden_dim) - 1):
-            modules.append(
-                nn.Sequential(
-                    nn.ConvTranspose2d(reversed_hidden_dim[i], reversed_hidden_dim[i + 1],
-                                       kernel_size=3, stride=2, padding=1, output_padding=1),
-                    nn.BatchNorm2d(reversed_hidden_dim[i + 1]),
-                    nn.LeakyReLU(0.2)
-                )
-            )
-        return nn.Sequential(*modules)
-
-    def encode(self, x: Tensor) -> List[Tensor]:
+    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Encodes input and returns latent codes.
-        :param x: Input tensor [N x C x H x W]
-        :return: List of mean and log variance tensors
+        Encodes input and returns (mu, log_var)
+        Args:
+            x [B, C, H, W]: Input
+        Returns:
+            mu: [B, D]
+            log_var: [B, D]
         """
         result = self.encoder(x)
         result = torch.flatten(result, start_dim=1)
         mu = self.fc_mu(result)
         log_var = self.fc_var(result)
-        return [mu, log_var]
-    
-    def decode(self, z: Tensor) -> Tensor:
-        result = self.decoder_input(z)
-        result = result.view(-1, self.hidden_dim[-1], 2, 2)
-        result = self.decoder(result)
-        result = self.final_layer(result)
-        return result
-    
-    def reparameterize(self, mu: Tensor, log_var: Tensor) -> Tensor:
+        return mu, log_var
+
+    def reparameterize(self, mu: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
         """
-        Reparameterization trick to sample from N(mu, var).
-        :param mu: Mean tensor
-        :param log_var: Log variance tensor
-        :return: Sampled tensor
+        Reparameterization trick
         """
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)
         return mu + eps * std
-    
-    def forward(self, x: Tensor, **kwargs) -> List[Tensor]:
+
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass through the network.
-        :param x: Input tensor [B x C x H x W]
-        :return: List containing reconstructed image, input image, mean, and log var
+        Decodes latent vector z to image space.
+        Args:
+            z [B, D]
+        Returns:
+            recon_x [B, C, H, W]
+        """
+        result = self.decoder_input(z)
+        result = result.view(-1, *self.enc_out_shape)
+        result = self.decoder(result)
+        result = self.final_layer(result)
+        return result
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Full forward pass
+        Args:
+            x [B, C, H, W]
+        Returns:
+            recon_x, x, mu, log_var
         """
         mu, log_var = self.encode(x)
         z = self.reparameterize(mu, log_var)
-        return [self.decode(z), x, mu, log_var]
+        recon_x = self.decode(z)
+        return recon_x, x, mu, log_var
 
     def loss_function(
-        self,
-        recons: Tensor,
-        input: Tensor,
-        mu: Tensor,
-        log_var: Tensor,
-        kld_weight: float
-    ) -> dict:
+        self, recons: torch.Tensor, input: torch.Tensor,
+        mu: torch.Tensor, log_var: torch.Tensor, kld_weight: float = 1.0
+    ) -> VAEOutput:
         """
-        Computes the VAE loss function.
-        :param recons: Reconstructed tensor
-        :param input: Original input tensor
-        :param mu: Latent mean
-        :param log_var: Latent log variance
-        :param kld_weight: KLD weight
-        :return: Loss components
+        Computes loss for VAE.
+        Args:
+            recons: Reconstructed
+            input: Original
+            mu, log_var: Latent mean & logvar
+            kld_weight: scaling for KL
+        Returns:
+            VAEOutput : dataclass with loss, recon_loss, kld
         """
-        recons_loss = F.mse_loss(recons, input)
-        kld_loss = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1).mean()
-        total_loss = recons_loss + kld_weight * kld_loss
-        return {
-            'loss': total_loss,
-            'Reconstruction_Loss': recons_loss.detach(),
-            'KLD': kld_loss.detach()
-        }
+        if self.recon_loss_type == 'bce':
+            recon_loss = F.binary_cross_entropy(recons, input, reduction='mean')
+        else:
+            recon_loss = F.mse_loss(recons, input)
 
-    def sample(self, batch_size: int, current_device: int, **kwargs) -> Tensor:
+        kld = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1).mean()
+        loss = recon_loss + kld_weight * kld
+        return VAEOutput(loss=loss, recon_loss=recon_loss.detach(), kld=kld.detach())
+
+    def sample(self, batch_size: int, device: torch.device) -> torch.Tensor:
         """
-        Samples from latent space and reconstructs input space.
-        :param batch_size: Number of samples
-        :param current_device: Device for computation
-        :return: Reconstructed tensor samples
+        Generate random samples from the VAE's latent space.
         """
-        z = torch.randn(batch_size, self.latent_dim).to(current_device)
-        return self.decode(z)
-    
-    def generate(self, x: Tensor, **kwargs) -> Tensor:
+        z = torch.randn(batch_size, self.fc_mu.out_features).to(device)
+        samples = self.decode(z)
+        return samples
+
+    def generate(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Generates a reconstruction of input image.
-        :param x: Input image [B x C x H x W]
-        :return: Reconstructed image [B x C x H x W]
+        For reconstruction of inputs.
         """
         return self.forward(x)[0]
