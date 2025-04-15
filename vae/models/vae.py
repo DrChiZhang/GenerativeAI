@@ -2,7 +2,7 @@ import torch
 from models import BaseVAE
 from torch import nn
 from torch.nn import functional as F
-from .types import *
+from .types_ import *
 
 class VAE(BaseVAE):
     def __init__(self
@@ -107,24 +107,43 @@ class VAE(BaseVAE):
         return [self.decode(z), x, mu, logvar]
 
     
-    def loss_function(self, *args, **kwargs) -> dict:
+    def loss_function(
+        self,
+        recons: torch.Tensor,
+        input: torch.Tensor,
+        mu: torch.Tensor,
+        log_var: torch.Tensor,
+        kld_weight: float  # Pass M_N as kld_weight
+    ) -> dict:
         """
-        Computes the VAE loss function.
-        KL(N(\mu, \sigma), N(0, 1)) = \log \frac{1}{\sigma} + \frac{\sigma^2 + \mu^2}{2} - \frac{1}{2}
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        recons = args[0]
-        input = args[1]
-        mu = args[2]
-        logvar = args[3]
+        Computes the VAE loss function:
+        KL(N(μ, σ) || N(0, 1)) = 0.5 * Σ(1 + log(σ²) - μ² - σ²)
+        
+        Args:
+            recons: Reconstructed data (decoder output)
+            input: Original input data
+            mu: Latent mean from encoder
+            log_var: Latent log-variance from encoder
+            kld_weight: Weight for KLD term (M_N in original code)
 
-        kld_weight = kwargs['M_N']
-        recons_loss = F.mse_loss(recons, input) 
-        kld_loss = torch.mean(-0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1))
-        loss = recons_loss + kld_weight * kld_loss
-        return {'loss': loss, 'Reconstruction_Loss':recons_loss.detach(), 'KLD':-kld_loss.detach()}
+        Returns:
+            dict: Loss components for logging.
+        """
+        # Reconstruction loss (MSE)
+        recons_loss = F.mse_loss(recons, input)
+
+        # KL Divergence (mean over batch)
+        kld_loss = 0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1)
+        kld_loss = torch.mean(kld_loss)  # Mean over batch
+
+        # Total loss
+        total_loss = recons_loss + kld_weight * kld_loss
+
+        return {
+            'loss': total_loss,
+            'Reconstruction_Loss': recons_loss.detach(),
+            'KLD': kld_loss.detach()  # No negative sign!
+        }
 
 
     def sample(self, batch_size: int, current_device: int, **kwargs) -> Tensor:
