@@ -2,4 +2,5 @@
 .vscode
 outputs
 ckpt
-data 
+data
+vae/logs*

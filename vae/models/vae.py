@@ -19,7 +19,8 @@ class VAE(nn.Module):
         latent_dim: int = 16,
         activation: Optional[Callable[[], nn.Module]] = None,
         recon_loss_type: str = "mse",        # "mse" or "bce"
-    ):
+        **kwargs: Any
+    ) -> None:
         """
         Args:
             x_dim : int : Number of channels in input image
