@@ -109,7 +109,10 @@ class VAEXperiment(pl.LightningModule):
         Triggers sampling/reconstruction image saving for visualization.
         """
         self.sample_images()
-
+    """
+    Pytorch Lightning's on_validation_epoch_end() method is called at the end of each validation epoch.
+    It is used to perform any actions that should occur after the validation loop has completed.
+    """
     def sample_images(self) -> None:
         """
         Samples from the test set to produce and save example reconstructions and

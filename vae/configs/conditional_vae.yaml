@@ -1,7 +1,7 @@
 model_params:
-  name: 'VAE'
-  x_dim: 3
-  input_shape: [3, 64, 64]
+  name: 'ConditionalVAE'
+  in_channels: 3
+  num_classes: 40
   latent_dim: 128
 
 
@@ -21,11 +21,10 @@ exp_params:
   manual_seed: 1265
 
 trainer_params:
-  max_epochs: 50
+  max_epochs: 10
   accelerator: 'gpu'
   devices: 1
 
 logging_params:
   save_dir: "logs/"
-  name: "VAE"
-  
+  name: "ConditionalVAE"

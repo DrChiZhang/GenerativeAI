@@ -34,8 +34,7 @@ def load_config(config_path):
 def main():
     # --------------------- Parse arguments ---------------------
     parser = argparse.ArgumentParser(description='Generic runner for VAE models')
-    parser.add_argument('--config', '-c', dest="filename", metavar='FILE',
-                        help='Path to the config file', default='configs/vae.yaml')
+    parser.add_argument('--config', '-c', dest="filename", metavar='FILE', help='Path to the config file', default='configs/vae.yaml')
     args = parser.parse_args()
 
     # --------------------- Load configuration ---------------------
@@ -60,6 +59,14 @@ def main():
     # Instantiate model using model_params from config
     model = vae_models[config['model_params']['name']](**config['model_params'])
     experiment = VAEXperiment(model, config['exp_params'])
+    """
+    Python knowledge:
+    The ** operator in Python is unpacking a dictionary into keyword arguments when calling a function or instantiating a class.
+    Usage:
+        params = {'a': 1, 'b': 2}
+        func(**params)   # Equivalent to func(a=1, b=2)
+    Note:  the ** operator only works with mapping types (mainly dict, or custom mapping objects).
+    """
 
     # --------------------- Data module setup ---------------------
     # Pin memory if using GPU workers
@@ -75,24 +82,35 @@ def main():
     Path(f"{tb_logger.log_dir}/checkpoints").mkdir(exist_ok=True, parents=True)
 
     # --------------------- Prepare PyTorch Lightning Callbacks ---------------------
+    """
+    Create a list of callback objects that will be passed to a training framework (likely PyTorch Lightning).
+    Callbacks are used to perform specific actions during model training, like saving checkpoints or monitoring metrics.
+    """
     callbacks = [
-        LearningRateMonitor(logging_interval='epoch'),  # Record learning rate over epochs
+        # Callback that logs the learning rate at the end of every epoch.
+        # Useful for tracking dynamic learning rate schedules and debugging training issues.
+        LearningRateMonitor(logging_interval='epoch'),  
+        
+        # Callback that saves model checkpoints during training.
         ModelCheckpoint(
-            save_top_k=2,
-            dirpath=os.path.join(tb_logger.log_dir, "checkpoints"),
-            filename='{epoch}-{val_loss:.4f}',         # Name includes validation loss
-            monitor="val_loss",
-            mode="min",                                # Lower val_loss is better
-            save_last=True,
+            save_top_k=2,  # Keep only the best 2 checkpoints with the lowest validation loss.
+            dirpath=os.path.join(tb_logger.log_dir, "checkpoints"),  # Directory to save checkpoint files, organized under TensorBoard logger's run directory.
+            filename='{epoch}-{val_loss:.4f}',  # Use epoch number and rounded validation loss in the checkpoint file name for easy identification.
+            monitor="val_loss",         # Which metric to use for identifying the "best" model(s).
+            mode="min",                 # "min" means that lower val_loss is better; use "max" for metrics where higher is better.
+            save_last=True,             # Also save a checkpoint of the very last epoch, regardless of performance.
         ),
     ]
 
     # --------------------- Initialize and run the trainer ---------------------
+    """
+     PyTorch Lightning's Trainer is a high-level interface for organizing and running deep learning training loops. 
+     The Trainer class controls how your model is trained, validated, and tested (not the model itself).
+    """
     runner = Trainer(
         logger=tb_logger,    # Attach TensorBoard logger
         callbacks=callbacks, # Attach hooks for LR and checkpointing
-        accelerator='gpu', 
-        devices=1
+        **config['trainer_params']  # Unpack trainer parameters from config
     )
 
     print(f"======= Training {model_name} =======")

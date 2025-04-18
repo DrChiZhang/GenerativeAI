@@ -103,14 +103,6 @@ class VAE(nn.Module):
         log_var = self.fc_var(result)
         return mu, log_var
 
-    def reparameterize(self, mu: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
-        """
-        Reparameterization trick
-        """
-        std = torch.exp(0.5 * log_var)
-        eps = torch.randn_like(std)
-        return mu + eps * std
-
     def decode(self, z: torch.Tensor) -> torch.Tensor:
         """
         Decodes latent vector z to image space.
@@ -124,8 +116,16 @@ class VAE(nn.Module):
         result = self.decoder(result)
         result = self.final_layer(result)
         return result
+    
+    def reparameterize(self, mu: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
+        """
+        Reparameterization trick
+        """
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        return mu + eps * std
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor, **kwargs) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Full forward pass
         Args:
@@ -139,8 +139,13 @@ class VAE(nn.Module):
         return recon_x, x, mu, log_var
 
     def loss_function(
-        self, recons: torch.Tensor, input: torch.Tensor,
-        mu: torch.Tensor, log_var: torch.Tensor, kld_weight: float = 1.0
+        self, 
+        recons: torch.Tensor, 
+        input: torch.Tensor,
+        mu: torch.Tensor, 
+        log_var: torch.Tensor, 
+        kld_weight: float = 1.0, 
+        **kwargs: Any
     ) -> VAEOutput:
         """
         Computes loss for VAE.
@@ -161,7 +166,11 @@ class VAE(nn.Module):
         loss = recon_loss + kld_weight * kld
         return VAEOutput(loss=loss, recon_loss=recon_loss.detach(), kld=kld.detach())
 
-    def sample(self, batch_size: int, device: torch.device) -> torch.Tensor:
+    def sample(self, 
+               batch_size: int, 
+               device: torch.device, 
+               **kwargs: Any
+        ) -> torch.Tensor:
         """
         Generate random samples from the VAE's latent space.
         """
@@ -169,7 +178,10 @@ class VAE(nn.Module):
         samples = self.decode(z)
         return samples
 
-    def generate(self, x: torch.Tensor) -> torch.Tensor:
+    def generate(self, 
+                 x: torch.Tensor, 
+                 **kwargs: Any
+        ) -> torch.Tensor:
         """
         For reconstruction of inputs.
         """
