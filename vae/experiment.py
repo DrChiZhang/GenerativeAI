@@ -53,27 +53,27 @@ class VAEXperiment(pl.LightningModule):
         images, labels = batch                   # Unpack batch
         self.curr_device = images.device         # Track device for later use (e.g., sampling)
 
-        outputs = self.forward(images, labels=labels)          # Forward pass returns (recons, input, mu, log_var)
-        recons, input_img, mu, log_var = outputs               # Unpack outputs
-
+        results = self.forward(images, labels=labels, optimizer_idx = 0)          # Forward pass returns (recons, input, mu, log_var)
         # Compute the loss. Use annealed KLD weight during training if provided.
         vae_loss = self.model.loss_function(
-            recons,
-            input_img,
-            mu,
-            log_var,
-            kld_weight=self.params.get('kld_weight', 1.0)      # Beta or annealed value
+            *results,  # Unpack results: (recons, input_img, mu, log_var)
+            kld_weight = self.params['kld_weight'],
+            optimizer_idx = 0,
+            batch_idx = batch_idx
         )
         # vae_loss is a VAEOutput dataclass with attributes: loss, recon_loss, kld
 
         # Log loss and metrics to TensorBoard and progress bar
         self.log("train_loss", vae_loss.loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
         self.log("train_recon_loss", vae_loss.recon_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
-        self.log("train_kld", vae_loss.kld, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        if vae_loss.kld_loss is not None:
+            self.log("train_kld_loss", vae_loss.kld_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        if vae_loss.vq_loss is not None:
+            self.log("train_vq_loss", vae_loss.vq_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
         return vae_loss.loss                    # Return total loss for gradient calculation
 
-    def validation_step(self, batch, batch_idx: int) -> None:
+    def validation_step(self, batch, batch_idx: int, optimizer_idx = 0) -> None:
         """
         Performs a validation step.
         - Forward pass
@@ -87,21 +87,21 @@ class VAEXperiment(pl.LightningModule):
         images, labels = batch
         self.curr_device = images.device
 
-        outputs = self.forward(images, labels=labels)          # Forward pass
-        recons, input_img, mu, log_var = outputs
-
+        results = self.forward(images, labels=labels)          # Forward pass
         vae_loss = self.model.loss_function(
-            recons,
-            input_img,
-            mu,
-            log_var,
-            kld_weight=1.0        # Validation typically uses kld_weight=1
+            *results,  # Unpack results: (recons, input_img, mu, log_var)
+            kld_weight = self.params['kld_weight'],
+            optimizer_idx = optimizer_idx,
+            batch_idx = batch_idx
         )
 
         # Log loss and metrics (only by epoch, not per batch)
         self.log("val_loss", vae_loss.loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
         self.log("val_recon_loss", vae_loss.recon_loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
-        self.log("val_kld", vae_loss.kld, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
+        if vae_loss.kld_loss is not None:
+            self.log("train_kld_loss", vae_loss.kld_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+        if vae_loss.vq_loss is not None:
+            self.log("train_vq_loss", vae_loss.vq_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
     def on_validation_epoch_end(self) -> None:
         """
@@ -138,10 +138,24 @@ class VAEXperiment(pl.LightningModule):
         )
 
         # Generate random samples only if model supports .sample()
+        """ 
+        Save exactly num_samples generated images as a grid.
+        The model.sample() method is expected to take num_classes, device, and labels as arguments.
+        The labels are used to condition the generation process.
+        If the test set has fewer than num_samples, repeat the test set labels as needed.
+        """
+        num_samples = self.params.get('num_samples', 144)  # Default to 144 samples
+        if test_label.shape[0] < num_samples:
+            # Repeat as needed and trim to right size
+            reps = (num_samples + test_label.shape[0] - 1) // test_label.shape[0]
+            sample_labels = test_label.repeat((reps, 1))[:num_samples]
+        else:
+            sample_labels = test_label[:num_samples]
+
         samples_dir = os.path.join(self.logger.log_dir, "Samples")
         os.makedirs(samples_dir, exist_ok=True)
         try:
-            samples = self.model.sample(144, self.curr_device, labels=test_label)
+            samples = self.model.sample(num_samples, self.curr_device, labels=sample_labels)
             vutils.save_image(
                 samples.cpu().data,
                 os.path.join(

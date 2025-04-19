@@ -1,6 +1,7 @@
 from .base import * 
 from .vae import * 
 from .conditional_vae import *
+from .vq_vae import *
 
 """
 VAE Models Dictionary
@@ -15,4 +16,5 @@ This is useful for loading different models based on user input or configuration
 vae_models = {
     "VAE": VAE,
     "ConditionalVAE": ConditionalVAE,
+    "VQVAE": VQVAE,
 }

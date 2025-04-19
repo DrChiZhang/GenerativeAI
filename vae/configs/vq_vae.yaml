@@ -1,12 +1,13 @@
-model_params:
-  name: 'ConditionalVAE'
+  model_params:
+  name: 'VQVAE'
   in_channels: 3
-  num_classes: 40
-  latent_dim: 128
-
+  embedding_dim: 64
+  num_embeddings: 512
+  img_size: 64
+  beta: 0.25
 
 data_params:
-  data_dir: "D:\\MyCode\\GenerativeAI\\data"
+  data_path: "D:\\MyCode\\GenerativeAI\\data"
   train_batch_size: 64
   val_batch_size:  64
   patch_size: 64
@@ -16,16 +17,15 @@ data_params:
 exp_params:
   LR: 0.005
   weight_decay: 0.0
-  scheduler_gamma: 0.95
+  scheduler_gamma: 0.0
   kld_weight: 0.00025
   manual_seed: 1265
-  num_samples: 144
 
 trainer_params:
-  max_epochs: 10
+  max_epochs: 20
   accelerator: 'gpu'
   devices: 1
 
 logging_params:
   save_dir: "logs/"
-  name: "ConditionalVAE"
+  name: 'VQVAE'

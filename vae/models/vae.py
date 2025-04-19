@@ -2,13 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from typing import List, Tuple, Callable, Any, Dict, Optional
-from dataclasses import dataclass
-
-@dataclass
-class VAEOutput:
-    loss: torch.Tensor
-    recon_loss: torch.Tensor
-    kld: torch.Tensor
+from .types_ import *
 
 class VAE(nn.Module):
     def __init__(
@@ -136,15 +130,11 @@ class VAE(nn.Module):
         mu, log_var = self.encode(x)
         z = self.reparameterize(mu, log_var)
         recon_x = self.decode(z)
-        return recon_x, x, mu, log_var
+        return [recon_x, x, mu, log_var]
 
     def loss_function(
         self, 
-        recons: torch.Tensor, 
-        input: torch.Tensor,
-        mu: torch.Tensor, 
-        log_var: torch.Tensor, 
-        kld_weight: float = 1.0, 
+        *args: Any,
         **kwargs: Any
     ) -> VAEOutput:
         """
@@ -157,6 +147,9 @@ class VAE(nn.Module):
         Returns:
             VAEOutput : dataclass with loss, recon_loss, kld
         """
+
+        recons, input, mu, log_var = args[0], args[1], args[2], args[3] # Unpack results
+        kld_weight = kwargs['kld_weight'] # Account for the minibatch samples from the dataset
         if self.recon_loss_type == 'bce':
             recon_loss = F.binary_cross_entropy(recons, input, reduction='mean')
         else:
@@ -164,7 +157,7 @@ class VAE(nn.Module):
 
         kld = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1).mean()
         loss = recon_loss + kld_weight * kld
-        return VAEOutput(loss=loss, recon_loss=recon_loss.detach(), kld=kld.detach())
+        return VAEOutput(loss=loss, recon_loss=recon_loss.detach(), kld_loss=kld.detach())
 
     def sample(self, 
                batch_size: int, 

@@ -2,13 +2,8 @@ import torch
 from torch import nn, Tensor
 from torch.nn import functional as F
 from typing import List, Any, Dict
-from dataclasses import dataclass
+from .types_ import *
 
-@dataclass
-class VAEOutput:
-    loss: torch.Tensor
-    recon_loss: torch.Tensor
-    kld: torch.Tensor
 
 class ConditionalVAE(nn.Module):  # Now inherit from torch.nn.Module
     def __init__(self,
@@ -122,11 +117,7 @@ class ConditionalVAE(nn.Module):  # Now inherit from torch.nn.Module
 
     def loss_function(
         self, 
-        recons: torch.Tensor, 
-        input: torch.Tensor,
-        mu: torch.Tensor, 
-        log_var: torch.Tensor, 
-        kld_weight: float = 1.0, 
+        *args: Any,
         **kwargs: Any
     ) -> VAEOutput:
         """
@@ -139,6 +130,9 @@ class ConditionalVAE(nn.Module):  # Now inherit from torch.nn.Module
         Returns:
             VAEOutput : dataclass with loss, recon_loss, kld
         """
+        recons, input, mu, log_var = args[0], args[1], args[2], args[3] # Unpack results
+        kld_weight = kwargs['kld_weight']  # Account for the minibatch samples from the dataset
+
         if self.recon_loss_type == 'bce':
             recon_loss = F.binary_cross_entropy(recons, input, reduction='mean')
         else:
@@ -146,7 +140,7 @@ class ConditionalVAE(nn.Module):  # Now inherit from torch.nn.Module
 
         kld = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1).mean()
         loss = recon_loss + kld_weight * kld
-        return VAEOutput(loss=loss, recon_loss=recon_loss.detach(), kld=kld.detach())
+        return VAEOutput(loss=loss, recon_loss=recon_loss.detach(), kld_loss=kld.detach())
 
     def sample(self, 
                batch_size: int, 
@@ -158,6 +152,7 @@ class ConditionalVAE(nn.Module):  # Now inherit from torch.nn.Module
         """
         y = labels.float().to(device)
         z = torch.randn(batch_size, self.latent_dim, device=device)
+        print(f"z.shape: {z.shape}, y.shape: {y.shape}")
         z = torch.cat([z, y], dim=1)
         samples = self.decode(z)
         return samples

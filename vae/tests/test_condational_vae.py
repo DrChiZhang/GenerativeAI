@@ -59,7 +59,7 @@ class TestConditionalVAE(unittest.TestCase):
         # Check that losses are finite
         self.assertTrue(torch.isfinite(vae_output.loss))
         self.assertTrue(torch.isfinite(vae_output.recon_loss))
-        self.assertTrue(torch.isfinite(vae_output.kld))
+        self.assertTrue(torch.isfinite(vae_output.kld_loss))
 
     def test_model_summary(self):
         # Print a summary of the encoder module
