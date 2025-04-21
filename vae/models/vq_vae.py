@@ -1,7 +1,7 @@
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
-from typing import List, Union
+from typing import List, Union, Tuple
 
 from .types_ import *
 
@@ -22,7 +22,7 @@ class VectorQuantizer(nn.Module):
         self.embedding = nn.Embedding(self.K, self.D)
         self.embedding.weight.data.uniform_(-1 / self.K, 1 / self.K)
 
-    def forward(self, latents: Tensor) -> Tensor:
+    def forward(self, latents: Tensor) -> Tuple[Tensor, Tensor]:
         """
         Discretizes each D-dimensional latent in the input feature map
         to the nearest entry in the codebook, then returns quantized output and loss term.
@@ -187,13 +187,17 @@ class VQVAE(nn.Module):
         quantized_inputs, vq_loss = self.vq_layer(encoding)
         return [self.decode(quantized_inputs), input, vq_loss]
 
-    def loss_function(self, *args, **kwargs) -> dict:
+    def loss_function(self, *args, **kwargs) -> VAEOutput:
         """
         Compute loss for VQ-VAE:
         - MSE/Recon loss
         - VQ (embedding, commitment) loss
         """
         recons, input, vq_loss = args[0], args[1], args[2]
+        assert torch.isfinite(recons).all(), "reconstruction output contains inf/nan"
+        assert torch.isfinite(input).all(), "input image contains inf/nan"
+        assert torch.isfinite(vq_loss).all(), "vq_loss is inf/nan"
+
         recons_loss = F.mse_loss(recons, input)
         loss = recons_loss + vq_loss
         return VAEOutput(loss=loss, recon_loss=recons_loss.detach(), vq_loss=vq_loss.detach())

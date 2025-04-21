@@ -1,9 +1,15 @@
-model_params:
-  name: 'ConditionalVAE'
+vae_model_params:
+  name: 'VQVAE'
   in_channels: 3
-  num_classes: 40
-  latent_dim: 128
+  embedding_dim: 64
+  num_embeddings: 512
+  img_size: 64
+  beta: 0.25
+  ckpt_path: "D:\\MyCode\\GenerativeAI\\vae\\logs\\VQVAE\\version_3\\checkpoints\\last.ckpt"
 
+ar_model_params:
+  name: 'PixelCNN'
+  n_classes: 40
 
 data_params:
   data_dir: "D:\\MyCode\\GenerativeAI\\data"
@@ -12,15 +18,13 @@ data_params:
   patch_size: 64
   num_workers: 4
 
-
 exp_params:
-  LR: 0.005
+  LR: 0.001
   weight_decay: 0.0
-  scheduler_gamma: 0.95
+  scheduler_gamma: 0.0
   kld_weight: 0.00025
   manual_seed: 1265
-  num_samples: 144
-  skip_sampling: False
+  skip_sampling: True
 
 trainer_params:
   max_epochs: 10
@@ -29,4 +33,4 @@ trainer_params:
 
 logging_params:
   save_dir: "logs/"
-  name: "ConditionalVAE"
+  name: 'VQVAE'

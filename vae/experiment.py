@@ -99,16 +99,19 @@ class VAEXperiment(pl.LightningModule):
         self.log("val_loss", vae_loss.loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
         self.log("val_recon_loss", vae_loss.recon_loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
         if vae_loss.kld_loss is not None:
-            self.log("train_kld_loss", vae_loss.kld_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+            self.log("val_kld_loss", vae_loss.kld_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
         if vae_loss.vq_loss is not None:
-            self.log("train_vq_loss", vae_loss.vq_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
+            self.log("val_vq_loss", vae_loss.vq_loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
     def on_validation_epoch_end(self) -> None:
         """
         Called at the end of each validation epoch by Lightning.
         Triggers sampling/reconstruction image saving for visualization.
         """
+        if self.params['skip_sampling']:  # Skip sampling if specified in params
+            return
         self.sample_images()
+
     """
     Pytorch Lightning's on_validation_epoch_end() method is called at the end of each validation epoch.
     It is used to perform any actions that should occur after the validation loop has completed.
@@ -124,11 +127,11 @@ class VAEXperiment(pl.LightningModule):
         test_label = test_label.to(self.curr_device)
 
         # Reconstruction: pass input through model
-        recons, _, _, _ = self.model(test_input, labels=test_label)
+        results = self.model(test_input, labels=test_label)
         recons_dir = os.path.join(self.logger.log_dir, "Reconstructions")
         os.makedirs(recons_dir, exist_ok=True)
         vutils.save_image(
-            recons.data,
+            results[0].data,
             os.path.join(
                 recons_dir,
                 f"recons_{self.logger.name}_Epoch_{self.current_epoch}.png"

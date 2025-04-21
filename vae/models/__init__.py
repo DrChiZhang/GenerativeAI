@@ -18,3 +18,18 @@ vae_models = {
     "ConditionalVAE": ConditionalVAE,
     "VQVAE": VQVAE,
 }
+
+from .pixel_cnn import PixelCNN
+
+"""
+PixelCNN Models Dictionary
+Define a dictionary that maps model names (strings) to their corresponding class constructors.
+This allows dynamic model selection and instantiation by name.
+Usage Example:
+    model_name = "PixelCNN"
+    model_class = pixelcnn_models[model_name]
+    model_instance = model_class(**kwargs)
+"""
+ar_models = {
+    "PixelCNN": PixelCNN,   
+}

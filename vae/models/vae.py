@@ -158,6 +158,24 @@ class VAE(nn.Module):
         kld = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1).mean()
         loss = recon_loss + kld_weight * kld
         return VAEOutput(loss=loss, recon_loss=recon_loss.detach(), kld_loss=kld.detach())
+    """
+    Pytorch knowledge:
+        1: .detach() creates a new tensor that shares the same storage/data as the original, but is not part of the computation graph.
+    This means:
+        1: Operations on the detached tensor will not require or store gradients.
+        2: Gradients do not backpropagate through the detached tensor.
+        3: Useful for saving memory and preventing unnecessary gradient calculations.
+    Why use .detach() for logging/metrics (but not for loss):
+        1: The loss for backward. Only the loss term should participate in gradient computation for .backward().
+        If you return/print/log some losses (e.g., recon_loss, vq_loss) as separate metrics, 
+        you do not want their use for logging to interfere with backward/autograd.
+        2: Common loggnng bug. If you sum e.g. train_recon_loss over an epoch without detaching, and later try to backpropagate, 
+        PyTorch will error ("Trying to backward through the graph a second time, but the buffers have already been freed...") or you may get unexpected memory usage.
+    So: 
+        return VAEOutput(loss=loss, recon_loss=recons_loss.detach(), vq_loss=vq_loss.detach())
+            loss keeps the graph for .backward()
+            recon_loss and vq_loss are detached for safe logging.
+    """
 
     def sample(self, 
                batch_size: int, 
