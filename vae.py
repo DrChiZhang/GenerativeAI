@@ -93,18 +93,35 @@ class VAE(nn.Module):
 
     """
     Perform the reparameterization trick to allow for backpropagation through stochastic variables.
-
     Parameters:
     - mu: Mean of the latent Gaussian distribution.
     - logvar: Log variance of the latent Gaussian distribution.
-
     Returns:
     - A sample from the distribution N(mu, sigma^2).
+    Note:
+    The sampleing z ~ N(mu, sigma^2) = mu + sigma * epsilon, where epsilon ~ N(0, 1).  
+    - randomness is moved into epsilon 
+    - the new sampleing z = mu + sigma * epsilon is differentiable w.r.t. mu and sigma.
+    - this allows us to backpropagate through the sampling process.
+    The standard deviation is calculated as exp(logvar / 2) to ensure it is positive.
     """
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)  # Standard deviation from log variance
         eps = torch.randn_like(std).to(device)  # Random noise
         return mu + eps * std  # Reparameterization trick
+    """
+    Python knowledge:
+    torch.randn_like(std) generates a tensor of the same shape as std, filled with random numbers from a normal distribution.
+    torch.randn_like(input, *, dtype=None, layout=None, device=None, requires_grad=False)-> Tensor
+    Inputs:
+    - input: The input tensor whose shape is to be matched.
+    - dtype: The desired data type of the returned tensor. If specified, the returned tensor will have this data type.
+    - layout: The desired layout of the returned tensor. If specified, the returned tensor will have this layout.
+    - device: The desired device of the returned tensor. If specified, the returned tensor will be allocated on this device.
+    - requires_grad: If True, the returned tensor will have gradient tracking enabled. This is useful for autograd.
+    Returns:
+    - A tensor of the same shape as input, filled with random numbers from a normal distribution.
+    """
 
     def forward(self, x):
         mu, logvar = self.encoder(x)  # Encode the input to get mean and log variance
