@@ -5,17 +5,17 @@ LookAt function to create a camera-to-world matrix (c2w) for a given camera posi
 The function computes the forward, right, and up vectors to construct the rotation matrix and translation vector.
 Parameters:
 - eye: Camera position (3D vector)
-- center: Target position (3D vector)  
+- target: Target position (3D vector)  
 - up: Up vector (3D vector)
 Returns:
 - c2w: Camera-to-world matrix (4x4 numpy array)
 The camera-to-world matrix is constructed such that the camera looks at the target point, with the specified up vector.
 """
-def look_at(eye, center, up):
+def look_at(eye, target, up):
     """
-    The normalized direction from the camera position (eye) to the target position (center).
+    The normalized direction from the camera position (eye) to the target position (target).
     """
-    forward = center - eye
+    forward = target - eye
     forward = forward / np.linalg.norm(forward)
     """
     Normalize the up vector to ensure it is a unit vector.
@@ -63,9 +63,10 @@ from mpl_toolkits.mplot3d import Axes3D
 fig = plt.figure(figsize=(7, 7))
 ax = fig.add_subplot(111, projection='3d')
 
+
 # Plot trajectory points and look-at targets
 trajectory = np.array([c2w[:3, 3] for c2w in trajectory_c2w])
-ax.plot(trajectory[:,0], trajectory[:,1], trajectory[:,2], 'o-', color='blue', label="Camera Centers")
+ax.plot(trajectory[:,0], trajectory[:,1], trajectory[:,2], 'o-', color='blue', label="Camera targets")
 
 # Plot camera frustums/orientations
 for c2w in trajectory_c2w:
