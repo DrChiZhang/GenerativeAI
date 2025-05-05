@@ -21,6 +21,8 @@ def load_tokenizers(src_model_name="Helsinki-NLP/opus-mt-de-en", tgt_model_name=
     """
     tokenizer_src = AutoTokenizer.from_pretrained(src_model_name)
     tokenizer_tgt = tokenizer_src if tgt_model_name is None else AutoTokenizer.from_pretrained(tgt_model_name)
+    print(tokenizer_src.pad_token)      # Might print: <pad>
+    print(tokenizer_tgt.pad_token_id)   # Might print: 2
     return tokenizer_src, tokenizer_tgt
 
 
@@ -47,7 +49,7 @@ def tokenize_batch(batch, tokenizer_src, tokenizer_tgt, src_lang="de", tgt_lang=
 
 
 # Pad all sequences in a batch to the same length
-def collate_batch(batch, pad_token_id):
+def collate_batch(batch, pad_token_id, device="cuda"):
     """
     Pads a batch of tokenized sequences so they can be fed into a model.
 
@@ -58,9 +60,9 @@ def collate_batch(batch, pad_token_id):
     Returns:
         dict: Batched and padded input_ids, attention_mask, and labels.
     """
-    input_ids = [torch.tensor(example["input_ids"]) for example in batch]
-    attention_mask = [torch.tensor(example["attention_mask"]) for example in batch]
-    labels = [torch.tensor(example["labels"]) for example in batch]
+    input_ids = [torch.tensor(example["input_ids"]).to(device) for example in batch]
+    attention_mask = [torch.tensor(example["attention_mask"]).to(device) for example in batch]
+    labels = [torch.tensor(example["labels"]).to(device) for example in batch]
 
     # Pad sequences
     input_ids = pad_sequence(input_ids, batch_first=True, padding_value=pad_token_id)
@@ -68,14 +70,14 @@ def collate_batch(batch, pad_token_id):
     labels = pad_sequence(labels, batch_first=True, padding_value=pad_token_id)
 
     return {
-        "input_ids": input_ids,
+        "src": input_ids,
+        "tgt": labels,
         "attention_mask": attention_mask,
-        "labels": labels,
     }
 
 
 # Load and tokenize the dataset, then return PyTorch DataLoaders
-def create_dataloaders(tokenizer_src, tokenizer_tgt, batch_size=32, src_lang="de", tgt_lang="en"):
+def create_dataloaders(tokenizer_src, tokenizer_tgt, batch_size=32, src_lang="de", tgt_lang="en", device="cuda"):
     """
     Loads the Multi30k dataset, tokenizes it using provided tokenizers, and returns DataLoaders.
 
@@ -105,7 +107,7 @@ def create_dataloaders(tokenizer_src, tokenizer_tgt, batch_size=32, src_lang="de
 
     # Define a collate function for padding batches
     pad_id = tokenizer_src.pad_token_id
-    collate_fn = lambda batch: collate_batch(batch, pad_token_id=pad_id)
+    collate_fn = lambda batch: collate_batch(batch, pad_token_id=pad_id, device=device)
 
     # Create PyTorch DataLoaders
     train_loader = DataLoader(tokenized_datasets["train"], batch_size=batch_size, shuffle=True, collate_fn=collate_fn)

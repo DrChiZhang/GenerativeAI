@@ -33,7 +33,7 @@ def greedy_decode(model, src, src_mask, max_len, start_symbol):
 # ----------------------------
 # Launch distributed training across GPUs
 # ----------------------------
-def train_distributed_model(vocab_src, vocab_tgt, config):
+def train_distributed_model(tokenizer_src, tokenizer_tgt, config):
     ngpus = torch.cuda.device_count()
     os.environ["MASTER_ADDR"] = "localhost"  # Required by PyTorch's DDP
     os.environ["MASTER_PORT"] = "12356"
@@ -44,17 +44,17 @@ def train_distributed_model(vocab_src, vocab_tgt, config):
     mp.spawn(
         train_worker,
         nprocs=ngpus,
-        args=(ngpus, vocab_src, vocab_tgt, config, True),
+        args=(ngpus, tokenizer_src, tokenizer_tgt, config, True),
     )
 
 # ----------------------------
 # Train on a single GPU or use DDP if specified
 # ----------------------------
-def train_model(vocab_src, vocab_tgt, config):
+def train_model(tokenizer_src, tokenizer_tgt, config):
     if config["distributed"]:
-        train_distributed_model(vocab_src, vocab_tgt, config)
+        train_distributed_model(tokenizer_src, tokenizer_tgt, config)
     else:
-        train_worker(0, 1, vocab_src, vocab_tgt, config, False)
+        train_worker(0,tokenizer_src, tokenizer_tgt, config, False)
 
 # ----------------------------
 # Load trained model or trigger training if not found

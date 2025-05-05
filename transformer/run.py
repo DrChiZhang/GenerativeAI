@@ -54,7 +54,7 @@ def train_model(vocab_src, vocab_tgt, spacy_de, spacy_en, config):
     if config["distributed"]:
         train_distributed_model(vocab_src, vocab_tgt, spacy_de, spacy_en, config)
     else:
-        train_worker(0, 1, vocab_src, vocab_tgt, spacy_de, spacy_en, config, False)
+        train_worker(0, vocab_src, vocab_tgt, spacy_de, spacy_en, config, False)
 
 # ----------------------------
 # Load trained model or trigger training if not found
