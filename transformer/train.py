@@ -54,7 +54,7 @@ def train_model(tokenizer_src, tokenizer_tgt, config):
     if config["distributed"]:
         train_distributed_model(tokenizer_src, tokenizer_tgt, config)
     else:
-        train_worker(0,tokenizer_src, tokenizer_tgt, config, False)
+        train_worker(0, 1, tokenizer_src, tokenizer_tgt, config, False)
 
 # ----------------------------
 # Load trained model or trigger training if not found

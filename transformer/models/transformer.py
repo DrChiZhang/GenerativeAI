@@ -146,6 +146,7 @@ class SimpleLossCompute:
 
 def train_worker(
     gpu,
+    ngpus_per_node,
     tokenizer_src,
     tokenizer_tgt,
     config,
@@ -163,7 +164,7 @@ def train_worker(
     is_main_process = True
 
     if is_distributed:
-        dist.init_process_group("nccl", init_method="env://", rank=gpu, world_size=1)
+        dist.init_process_group("nccl", init_method="env://", rank=gpu, world_size=ngpus_per_node)
         model = DDP(model, device_ids=[gpu])
         module = model.module
         is_main_process = gpu == 0
@@ -173,7 +174,7 @@ def train_worker(
     train_dataloader, valid_dataloader = create_dataloaders(
         tokenizer_src,
         tokenizer_tgt,
-        batch_size=config["batch_size"], 
+        batch_size=config["batch_size"] // ngpus_per_node, 
         device=device
     )
 
